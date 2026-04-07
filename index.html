@@ -38,12 +38,17 @@
             align-items: flex-start; justify-content: center;
         }
 
+        #game-container { align-items: stretch; }
         .side-panel {
             display: flex; flex-direction: column; gap: 12px;
             width: 320px; flex-shrink: 0;
+            justify-content: flex-end; /* align contents to bottom of board */
         }
-        .side-left { align-items: flex-end; }
-        .side-right { align-items: flex-start; }
+        .info-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+        }
+        .info-grid .panel { padding: 8px 12px; font-size: 11px; text-align: center; }
+        .next-wrap { text-align: center; }
 
         canvas#board {
             border: 6px solid #222; box-shadow: 0 0 30px rgba(0, 255, 204, 0.6);
@@ -102,16 +107,6 @@
 <body>
     <header>
         <h1>🏋️ BODY TETRIS</h1>
-        <div class="info">
-            <div class="panel">SCORE<br><span id="score" style="font-size:28px;color:#00ffcc;">000000</span></div>
-            <div class="panel">HIGH<br><span id="highscore" style="font-size:28px;color:#ffcc00;">000000</span></div>
-            <div class="panel">LEVEL<br><span id="level" style="font-size:28px;color:#00ffcc;">01</span></div>
-            <div class="panel">LINES<br><span id="lines" style="font-size:28px;color:#00ffcc;">000</span></div>
-            <div>
-                <div style="margin-bottom:8px;color:#00ffcc;">NEXT</div>
-                <canvas id="next-piece" class="next" width="140" height="140"></canvas>
-            </div>
-        </div>
     </header>
 
     <div id="game-container">
@@ -134,6 +129,16 @@
         </div>
 
         <div class="side-panel side-right">
+            <div class="info-grid">
+                <div class="panel">SCORE<br><span id="score" style="font-size:24px;color:#00ffcc;">000000</span></div>
+                <div class="panel">HIGH<br><span id="highscore" style="font-size:24px;color:#ffcc00;">000000</span></div>
+                <div class="panel">LEVEL<br><span id="level" style="font-size:24px;color:#00ffcc;">01</span></div>
+                <div class="panel">LINES<br><span id="lines" style="font-size:24px;color:#00ffcc;">000</span></div>
+            </div>
+            <div class="next-wrap">
+                <div style="color:#00ffcc;font-size:12px;margin-bottom:6px;">NEXT</div>
+                <canvas id="next-piece" class="next" width="140" height="140"></canvas>
+            </div>
             <div class="cam-wrap">
                 <video id="webcam" autoplay playsinline muted></video>
                 <canvas id="pose-canvas" width="320" height="240"></canvas>
