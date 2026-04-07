@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Body Tetris • MediaPipe Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.1/drawing_utils.js" crossorigin="anonymous"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root { --bg: #0a0a0a; --grid: #1a1a2e; --accent: #00ffcc; }
+
+        body {
+            margin: 0; padding: 0; background: var(--bg); color: white;
+            font-family: 'Press Start 2P', system-ui; overflow: hidden;
+            display: flex; flex-direction: column; align-items: center; height: 100vh;
+        }
+
+        header {
+            width: 100%; text-align: center; padding: 15px; background: #111;
+            border-bottom: 4px solid var(--accent); display: flex;
+            justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+            box-sizing: border-box;
+        }
+
+        h1 { font-size: 24px; margin: 0; text-shadow: 0 0 10px var(--accent); }
+
+        .info { display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; align-items: center; }
+
+        .panel {
+            background: #111; padding: 10px 20px; border: 3px solid var(--accent);
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+        }
+
+        #game-container {
+            position: relative; margin-top: 20px; display: flex; gap: 30px;
+            align-items: flex-start; justify-content: center;
+        }
+
+        .side-panel {
+            display: flex; flex-direction: column; gap: 12px;
+            width: 320px; flex-shrink: 0;
+        }
+        .side-left { align-items: flex-end; }
+        .side-right { align-items: flex-start; }
+
+        canvas#board {
+            border: 6px solid #222; box-shadow: 0 0 30px rgba(0, 255, 204, 0.6);
+            image-rendering: pixelated; background: #0f0f1f;
+            flex-shrink: 0;
+        }
+
+        .cam-wrap {
+            position: relative; width: 320px; height: 240px;
+        }
+        #webcam, #pose-canvas {
+            position: absolute; top: 0; left: 0; width: 320px; height: 240px;
+            border: 4px solid #00ffcc; border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.8);
+            box-sizing: border-box;
+            transform: scaleX(-1); /* mirror so left arm == move left */
+        }
+        #webcam { opacity: 0.95; }
+        #pose-canvas { pointer-events: none; }
+
+        .next { width: 140px; height: 140px; background: #111; border: 4px solid var(--accent); }
+
+        .controls {
+            background: rgba(0,0,0,0.85); padding: 14px 18px; border: 3px solid var(--accent);
+            border-radius: 8px; font-size: 11px; line-height: 1.8;
+            width: 100%; box-sizing: border-box; text-align: left;
+        }
+        .controls strong { color: var(--accent); }
+
+        .status {
+            background: rgba(0,0,0,0.75); padding: 10px 12px;
+            border: 2px solid #00ffcc; font-size: 12px; text-align: center;
+            width: 100%; box-sizing: border-box;
+        }
+
+        .overlay-text {
+            position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 40px; color: var(--accent); text-shadow: 0 0 20px var(--accent);
+            z-index: 30; animation: pulse 1s infinite; text-align: center;
+        }
+        .overlay-text .sub {
+            display: block; font-size: 14px; margin-top: 20px; color: #fff;
+        }
+        .overlay-text button {
+            margin-top: 20px; font-family: inherit; font-size: 14px;
+            background: var(--accent); color: #000; border: none; padding: 12px 24px;
+            cursor: pointer; box-shadow: 0 0 15px var(--accent);
+        }
+        .overlay-text button:hover { background: #fff; }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.75; } }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏋️ BODY TETRIS</h1>
+        <div class="info">
+            <div class="panel">SCORE<br><span id="score" style="font-size:28px;color:#00ffcc;">000000</span></div>
+            <div class="panel">LEVEL<br><span id="level" style="font-size:28px;color:#00ffcc;">01</span></div>
+            <div class="panel">LINES<br><span id="lines" style="font-size:28px;color:#00ffcc;">000</span></div>
+            <div>
+                <div style="margin-bottom:8px;color:#00ffcc;">NEXT</div>
+                <canvas id="next-piece" class="next" width="140" height="140"></canvas>
+            </div>
+        </div>
+    </header>
+
+    <div id="game-container">
+        <div class="side-panel side-left">
+            <div class="controls">
+                <strong>KEYBOARD</strong><br>
+                ← → ↓ &nbsp;move<br>
+                ↑ &nbsp;rotate<br>
+                Space &nbsp;hard drop<br>
+                P &nbsp;pause
+            </div>
+            <div class="controls">
+                <strong>BODY</strong><br>
+                Raise L arm → move left<br>
+                Raise R arm → move right<br>
+                Both arms up → rotate<br>
+                Both arms down → hard drop
+            </div>
+        </div>
+
+        <canvas id="board" width="400" height="640"></canvas>
+
+        <div id="overlay" class="overlay-text" style="display:none;">
+            <div id="overlay-title">GAME OVER</div>
+            <span class="sub" id="overlay-sub">Final Score: 0</span>
+            <button id="restart-btn">RESTART</button>
+        </div>
+
+        <div class="side-panel side-right">
+            <div class="cam-wrap">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="pose-canvas" width="320" height="240"></canvas>
+            </div>
+            <div class="status" id="status">Waiting for pose...</div>
+        </div>
+    </div>
+
+    <footer style="margin-top:auto;padding:15px;font-size:12px;opacity:0.7;text-align:center;">
+        MediaPipe Pose + Tetris • Hold dumbbells for maximum fun!
+    </footer>
+
+    <script>
+        // ============== TETRIS ENGINE ==============
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        const BLOCK = 32;
+        const COLS = 10, ROWS = 20;
+
+        const PIECES = [
+            { shape: [[1,1,1,1]], color: '#00f0f0' },
+            { shape: [[1,1],[1,1]], color: '#f0f000' },
+            { shape: [[0,1,0],[1,1,1]], color: '#a000f0' },
+            { shape: [[0,1,1],[1,1,0]], color: '#00f000' },
+            { shape: [[1,1,0],[0,1,1]], color: '#f00000' },
+            { shape: [[1,0,0],[1,1,1]], color: '#f0a000' },
+            { shape: [[0,0,1],[1,1,1]], color: '#0000f0' }
+        ];
+
+        let board, currentPiece, nextPiece;
+        let score, linesCleared, level, dropInterval, lastDrop;
+        let gameOver, paused;
+        let posX, posY;
+
+        function getRandomPiece() {
+            const p = PIECES[Math.floor(Math.random()*PIECES.length)];
+            // deep copy so rotations don't mutate the template
+            return { shape: p.shape.map(row => row.slice()), color: p.color };
+        }
+
+        function newPiece() {
+            currentPiece = nextPiece || getRandomPiece();
+            nextPiece = getRandomPiece();
+            posX = Math.floor(COLS/2) - Math.floor(currentPiece.shape[0].length/2);
+            posY = 0;
+            drawNext();
+            if (collision()) {
+                gameOver = true;
+                document.getElementById('overlay-sub').textContent = 'Final Score: ' + Math.floor(score);
+                document.getElementById('overlay').style.display = 'block';
+            }
+        }
+
+        function collision() {
+            const s = currentPiece.shape;
+            for (let r = 0; r < s.length; r++) {
+                for (let c = 0; c < s[r].length; c++) {
+                    if (!s[r][c]) continue;
+                    const nx = posX + c, ny = posY + r;
+                    if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+                    if (ny < 0) continue;
+                    if (board[ny][nx]) return true;
+                }
+            }
+            return false;
+        }
+
+        function rotate() {
+            const old = currentPiece.shape;
+            currentPiece.shape = old[0].map((_, i) => old.map(row => row[i]).reverse());
+            // wall-kick: try small shifts
+            const kicks = [0, -1, 1, -2, 2];
+            for (const k of kicks) {
+                posX += k;
+                if (!collision()) return;
+                posX -= k;
+            }
+            currentPiece.shape = old;
+        }
+
+        function merge() {
+            const s = currentPiece.shape;
+            for (let r = 0; r < s.length; r++) {
+                for (let c = 0; c < s[r].length; c++) {
+                    if (s[r][c]) {
+                        const y = posY + r;
+                        if (y >= 0) board[y][posX + c] = currentPiece.color;
+                    }
+                }
+            }
+        }
+
+        function clearLines() {
+            let lines = 0;
+            for (let r = ROWS-1; r >= 0; r--) {
+                if (board[r].every(cell => cell)) {
+                    board.splice(r, 1);
+                    board.unshift(Array(COLS).fill(0));
+                    lines++; r++;
+                }
+            }
+            if (lines) {
+                score += [0,100,300,500,800][lines] * level;
+                linesCleared += lines;
+                level = Math.floor(linesCleared/10) + 1;
+                dropInterval = Math.max(100, 800 - (level-1)*80);
+                updateUI();
+            }
+        }
+
+        function hardDrop() {
+            while (!collision()) { posY++; score += 2; }
+            posY--; merge(); clearLines(); newPiece(); updateUI();
+        }
+
+        function draw() {
+            ctx.fillStyle = '#0f0f1f'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+            ctx.strokeStyle = '#222244';
+            for (let i = 0; i <= COLS; i++) { ctx.beginPath(); ctx.moveTo(i*BLOCK,0); ctx.lineTo(i*BLOCK,canvas.height); ctx.stroke(); }
+            for (let i = 0; i <= ROWS; i++) { ctx.beginPath(); ctx.moveTo(0,i*BLOCK); ctx.lineTo(canvas.width,i*BLOCK); ctx.stroke(); }
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c]) {
+                        ctx.fillStyle = board[r][c];
+                        ctx.fillRect(c*BLOCK+1, r*BLOCK+1, BLOCK-2, BLOCK-2);
+                    }
+                }
+            }
+
+            if (currentPiece) {
+                // ghost piece
+                const savedY = posY;
+                while (!collision()) posY++;
+                posY--;
+                ctx.fillStyle = currentPiece.color + '55';
+                const gs = currentPiece.shape;
+                for (let r = 0; r < gs.length; r++) {
+                    for (let c = 0; c < gs[r].length; c++) {
+                        if (gs[r][c]) {
+                            const y = (posY + r) * BLOCK;
+                            if (y >= 0) ctx.fillRect((posX + c)*BLOCK+1, y+1, BLOCK-2, BLOCK-2);
+                        }
+                    }
+                }
+                posY = savedY;
+
+                ctx.fillStyle = currentPiece.color;
+                const s = currentPiece.shape;
+                for (let r = 0; r < s.length; r++) {
+                    for (let c = 0; c < s[r].length; c++) {
+                        if (s[r][c]) {
+                            const x = (posX + c) * BLOCK;
+                            const y = (posY + r) * BLOCK;
+                            if (y < 0) continue;
+                            ctx.fillRect(x+1, y+1, BLOCK-2, BLOCK-2);
+                        }
+                    }
+                }
+            }
+
+            if (paused && !gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.fillStyle = '#00ffcc';
+                ctx.font = '32px "Press Start 2P", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('PAUSED', canvas.width/2, canvas.height/2);
+            }
+        }
+
+        function drawNext() {
+            const pCanvas = document.getElementById('next-piece');
+            const pctx = pCanvas.getContext('2d');
+            pctx.fillStyle = '#111'; pctx.fillRect(0,0,140,140);
+            const s = nextPiece.shape;
+            const bs = 28;
+            const ox = (140 - s[0].length*bs)/2;
+            const oy = (140 - s.length*bs)/2;
+            pctx.fillStyle = nextPiece.color;
+            for (let r = 0; r < s.length; r++) {
+                for (let c = 0; c < s[r].length; c++) {
+                    if (s[r][c]) pctx.fillRect(ox + c*bs + 2, oy + r*bs + 2, bs-4, bs-4);
+                }
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = String(Math.floor(score)).padStart(6,'0');
+            document.getElementById('level').textContent = String(level).padStart(2,'0');
+            document.getElementById('lines').textContent = String(linesCleared).padStart(3,'0');
+        }
+
+        function resetGame() {
+            board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+            score = 0; linesCleared = 0; level = 1;
+            dropInterval = 800; lastDrop = Date.now();
+            gameOver = false; paused = false;
+            nextPiece = getRandomPiece();
+            newPiece();
+            document.getElementById('overlay').style.display = 'none';
+            updateUI();
+            draw();
+            gameLoop();
+        }
+
+        // ============== MediaPipe Pose ==============
+        const video = document.getElementById('webcam');
+        const poseCanvas = document.getElementById('pose-canvas');
+        const poseCtx = poseCanvas.getContext('2d');
+        let lastMoveTime = 0, lastRotateTime = 0, lastDropTime = 0;
+
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults((results) => {
+            poseCtx.save();
+            poseCtx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
+            if (results.poseLandmarks) {
+                drawConnectors(poseCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00ffcc', lineWidth: 2});
+                drawLandmarks(poseCtx, results.poseLandmarks, {color: '#ff00aa', lineWidth: 1, radius: 3});
+            }
+            poseCtx.restore();
+
+            if (!results.poseLandmarks || gameOver || paused) return;
+
+            const lm = results.poseLandmarks;
+            const now = Date.now();
+
+            const leftWrist = lm[15];
+            const rightWrist = lm[16];
+            const leftShoulder = lm[11];
+            const rightShoulder = lm[12];
+
+            if (!leftWrist || !rightWrist || !leftShoulder || !rightShoulder) return;
+
+            // require reasonable visibility
+            const vis = [leftWrist, rightWrist, leftShoulder, rightShoulder]
+                .every(p => (p.visibility ?? 1) > 0.5);
+            if (!vis) {
+                document.getElementById('status').textContent = "Step back - show full torso";
+                return;
+            }
+
+            const leftArmRaised = leftWrist.y < leftShoulder.y - 0.15;
+            const rightArmRaised = rightWrist.y < rightShoulder.y - 0.15;
+            const bothArmsRaised = leftArmRaised && rightArmRaised;
+            const bothArmsDown = leftWrist.y > leftShoulder.y + 0.25 && rightWrist.y > rightShoulder.y + 0.25;
+
+            let statusMsg = "Tracking...";
+            if (bothArmsRaised) statusMsg = "ROTATE!";
+            else if (bothArmsDown) statusMsg = "HARD DROP!";
+            else if (leftArmRaised) statusMsg = "← LEFT";
+            else if (rightArmRaised) statusMsg = "RIGHT →";
+            document.getElementById('status').textContent = statusMsg;
+
+            // Priority: rotate > hard drop > single-arm move. Prevents conflicts.
+            if (bothArmsRaised) {
+                if (now - lastRotateTime > 500) { rotate(); lastRotateTime = now; }
+                return;
+            }
+            if (bothArmsDown) {
+                if (now - lastDropTime > 700) { hardDrop(); lastDropTime = now; }
+                return;
+            }
+
+            // Video is mirrored in CSS, so "left arm raised" (user's left) should move piece left.
+            // In the raw landmarks, lm[15] is the person's LEFT wrist — which appears on the RIGHT
+            // of the unmirrored feed. Since we mirror the display, user's left arm raised = move left.
+            if (leftArmRaised && !rightArmRaised && now - lastMoveTime > 180) {
+                posX--; if (collision()) posX++;
+                lastMoveTime = now;
+            } else if (rightArmRaised && !leftArmRaised && now - lastMoveTime > 180) {
+                posX++; if (collision()) posX--;
+                lastMoveTime = now;
+            }
+        });
+
+        // ============== Game Loop ==============
+        let loopRunning = false;
+        function gameLoop() {
+            if (gameOver) { loopRunning = false; return; }
+            loopRunning = true;
+
+            if (!paused) {
+                const now = Date.now();
+                if (now - lastDrop > dropInterval) {
+                    posY++;
+                    if (collision()) {
+                        posY--;
+                        merge();
+                        clearLines();
+                        newPiece();
+                    }
+                    lastDrop = now;
+                }
+            }
+
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Keyboard
+        document.addEventListener('keydown', e => {
+            if (gameOver) {
+                if (e.key === 'Enter' || e.key === ' ') resetGame();
+                return;
+            }
+            if (e.key === 'p' || e.key === 'P') {
+                paused = !paused;
+                if (!paused) lastDrop = Date.now(); // avoid instant drop after unpause
+                draw();
+                return;
+            }
+            if (paused) return;
+            switch(e.key) {
+                case 'ArrowLeft': posX--; if(collision()) posX++; break;
+                case 'ArrowRight': posX++; if(collision()) posX--; break;
+                case 'ArrowDown': posY++; if(collision()) posY--; else { score++; updateUI(); } break;
+                case 'ArrowUp': rotate(); break;
+                case ' ': e.preventDefault(); hardDrop(); break;
+            }
+            draw();
+        });
+
+        document.getElementById('restart-btn').addEventListener('click', resetGame);
+
+        // Start
+        async function start() {
+            canvas.width = COLS * BLOCK;
+            canvas.height = ROWS * BLOCK;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                await new Promise(res => video.onloadedmetadata = res);
+                await video.play();
+            } catch (err) {
+                console.error("Webcam error:", err);
+                document.getElementById('status').textContent = "Webcam unavailable - use keyboard";
+            }
+
+            // Process frames (guarded so overlapping sends don't stack)
+            let busy = false;
+            setInterval(async () => {
+                if (busy || video.readyState < 2) return;
+                busy = true;
+                try { await pose.send({ image: video }); }
+                catch (e) { /* ignore */ }
+                busy = false;
+            }, 80);
+
+            resetGame();
+        }
+
+        window.onload = start;
+    </script>
+</body>
+</html>
