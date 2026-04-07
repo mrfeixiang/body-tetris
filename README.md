@@ -3,6 +3,7 @@
 Play Tetris with your body! Pose-controlled Tetris using [MediaPipe Pose](https://github.com/google/mediapipe) directly in your browser — no install required.
 
 **🎮 Live Demo:** [GitHub Pages](https://mrfeixiang.github.io/body-tetris/) • [Vercel](https://body-tetris.vercel.app/)
+**📺 Video:** [YouTube Intro / 영상 소개 / 视频介绍](https://youtu.be/Y4jVoH-PPtQ)
 
 [English](#english) • [한국어](#한국어) • [中文](#中文)
 
